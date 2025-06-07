@@ -319,132 +319,108 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
     );
   }
 
-  void _manageStaticFields() {
-    final _formKey = GlobalKey<FormState>();
-    String newFieldName = '';
-    List<StaticField> localStaticFields = List.from(staticFields);
 
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Text('مدیریت فیلدهای ثابت', textDirection: TextDirection.rtl),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Form(
-                  key: _formKey,
-                  child: TextFormField(
-                    decoration: InputDecoration(
-                      labelText: 'نام فیلد جدید',
-                    ),
-                    textDirection: TextDirection.rtl,
-                    textAlign: TextAlign.right,
-                    validator: (value) =>
-                        value!.isEmpty ? 'نام فیلد را وارد کنید' : null,
-                    onSaved: (value) => newFieldName = value!,
+  void _manageStaticFields() {
+  final _formKey = GlobalKey<FormState>();
+  String newFieldName = '';
+  List<StaticField> localStaticFields = List.from(staticFields);
+
+  showDialog(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: Text('مدیریت فیلدهای ثابت', textDirection: TextDirection.rtl),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Form(
+                key: _formKey,
+                child: TextFormField(
+                  decoration: InputDecoration(
+                    labelText: 'نام فیلد جدید',
                   ),
+                  textDirection: TextDirection.rtl,
+                  textAlign: TextAlign.right,
+                  validator: (value) =>
+                      value!.isEmpty ? 'نام فیلد را وارد کنید' : null,
+                  onSaved: (value) => newFieldName = value!,
                 ),
-                SizedBox(height: 10),
-                ...localStaticFields.map((field) => ListTile(
-                      title: Text(
-                        '${field.displayName} (${field.isRequired ? "الزامی" : "اختیاری"})',
-                        textDirection: TextDirection.rtl,
-                      ),
-                      subtitle: CheckboxListTile(
-                        title: Text('نمایش در اطلاعات کارمند',
-                            textDirection: TextDirection.rtl),
-                        value: field.isVisible,
-                        onChanged: (value) async {
-                          if (value != null) {
-                            await DatabaseHelper.instance
-                                .updateStaticFieldVisibility(
-                                    field.fieldName, value);
-                            setState(() {
-                              localStaticFields = localStaticFields.map((f) {
-                                if (f.fieldName == field.fieldName) {
-                                  return StaticField(
-                                    fieldName: f.fieldName,
-                                    isRequired: f.isRequired,
-                                    displayName: f.displayName,
-                                    isVisible: value,
-                                  );
-                                }
-                                return f;
-                              }).toList();
-                            });
-                            await _loadStaticFields();
-                            await _loadTabsAndEmployees();
-                          }
-                        },
-                      ),
-                      trailing: field.isRequired
-                          ? null
-                          : IconButton(
-                              icon: Icon(Icons.delete, color: Colors.red),
-                              onPressed: () async {
-                                await DatabaseHelper.instance
-                                    .deleteStaticField(field.fieldName);
-                                setState(() {
-                                  localStaticFields.removeWhere(
-                                      (f) => f.fieldName == field.fieldName);
-                                });
-                                await _loadStaticFields();
-                                await _loadTabsAndEmployees();
-                              },
-                            ),
-                    )),
-              ],
-            ),
+              ),
+              SizedBox(height: 10),
+              ...localStaticFields.map((field) => ListTile(
+                    title: Text(
+                      '${field.displayName} (${field.isRequired ? "الزامی" : "اختیاری"})',
+                      textDirection: TextDirection.rtl,
+                    ),
+                    trailing: field.isRequired
+                        ? null
+                        : IconButton(
+                            icon: Icon(Icons.delete, color: Colors.red),
+                            onPressed: () async {
+                              await DatabaseHelper.instance
+                                  .deleteStaticField(field.fieldName);
+                              setState(() {
+                                localStaticFields.removeWhere(
+                                    (f) => f.fieldName == field.fieldName);
+                              });
+                              await _loadStaticFields();
+                              await _loadTabsAndEmployees();
+                            },
+                          ),
+                  )),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('کنسل', textDirection: TextDirection.rtl),
-            ),
-            TextButton(
-              onPressed: () async {
-                if (_formKey.currentState!.validate()) {
-                  _formKey.currentState!.save();
-                  if (!localStaticFields
-                      .any((f) => f.fieldName == newFieldName)) {
-                    await DatabaseHelper.instance.insertStaticField(StaticField(
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('کنسل', textDirection: TextDirection.rtl),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (_formKey.currentState!.validate()) {
+                _formKey.currentState!.save();
+                if (!localStaticFields
+                    .any((f) => f.fieldName == newFieldName)) {
+                  await DatabaseHelper.instance.insertStaticField(StaticField(
+                    fieldName: newFieldName,
+                    isRequired: false,
+                    displayName: newFieldName,
+                    isVisible: true,
+                  ));
+                  setState(() {
+                    localStaticFields.add(StaticField(
                       fieldName: newFieldName,
                       isRequired: false,
                       displayName: newFieldName,
                       isVisible: true,
                     ));
-                    setState(() {
-                      localStaticFields.add(StaticField(
-                        fieldName: newFieldName,
-                        isRequired: false,
-                        displayName: newFieldName,
-                        isVisible: true,
-                      ));
-                    });
-                    await _loadStaticFields();
-                    await _loadTabsAndEmployees();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'فیلد ثابت جدید با موفقیت اضافه شد',
-                          textDirection: TextDirection.rtl,
-                        ),
+                  });
+                  await _loadStaticFields();
+                  await _loadTabsAndEmployees();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'فیلد ثابت جدید با موفقیت اضافه شد',
+                        textDirection: TextDirection.rtl,
                       ),
-                    );
-                  }
-                  Navigator.pop(context);
+                    ),
+                  );
                 }
-              },
-              child: Text('افزودن', textDirection: TextDirection.rtl),
-            ),
-          ],
-        ),
+                Navigator.pop(context);
+              }
+            },
+            child: Text('افزودن', textDirection: TextDirection.rtl),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
+
+
   void _exportDatabase() async {
     try {
       final filePath = await DatabaseHelper.instance.exportDatabase();
@@ -519,6 +495,7 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                 content: Text('دیتابیس با موفقیت از ${file.name} وارد شد')),
           );
         } catch (e) {
+          print(e);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('خطا در وارد کردن دیتابیس: $e')),
           );
@@ -746,19 +723,6 @@ void _showEmployeeDetails(BuildContext context, Employee emp) {
               }
               return SizedBox.shrink();
             }),
-            // Display all dynamic fields, regardless of visibility
-            if (emp.dynamicFields.isNotEmpty) ...[
-              SizedBox(height: 10),
-              Text(
-                'فیلدهای اضافی:',
-                style: TextStyle(fontWeight: FontWeight.bold),
-                textDirection: TextDirection.rtl,
-              ),
-              ...emp.dynamicFields.entries.map((entry) => Text(
-                    '${entry.key}: ${entry.value}',
-                    textDirection: TextDirection.rtl,
-                  )),
-            ],
           ],
         ),
       ),
@@ -938,13 +902,7 @@ void _showEmployeeDetails(BuildContext context, Employee emp) {
                       );
                     }
                   }),
-                  SizedBox(height: 10),
-                  Text('فیلدهای اضافی:',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  ...dynamicFieldNames.map((fieldName) => TextFormField(
-                        controller: dynamicFieldControllers[fieldName],
-                        decoration: InputDecoration(labelText: fieldName),
-                      )),
+                  
                   SizedBox(height: 10),
                   Text('فیلدهای قابل نمایش در جزئیات:',
                       style: TextStyle(fontWeight: FontWeight.bold),

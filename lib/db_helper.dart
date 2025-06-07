@@ -517,92 +517,126 @@ class DatabaseHelper {
   }
 
   Future<void> importDatabaseFromJson(String filePath) async {
-    final db = await database;
-    final importFile = File(filePath);
+  final db = await database;
+  final importFile = File(filePath);
 
-    if (!await importFile.exists()) {
-      throw Exception('File $filePath not found.');
-    }
-
-    try {
-      final jsonContent = await importFile.readAsString();
-      final importData = jsonDecode(jsonContent) as Map<String, dynamic>;
-
-      await db.transaction((txn) async {
-        await txn.execute('DROP TABLE IF EXISTS employees');
-        await txn.execute('DROP TABLE IF EXISTS tabs');
-        await txn.execute('DROP TABLE IF EXISTS dynamic_fields');
-        await txn.execute('DROP TABLE IF EXISTS static_fields');
-
-        await txn.execute('''
-          CREATE TABLE tabs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL
-          )
-        ''');
-
-        await txn.execute('''
-          CREATE TABLE employees (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            title TEXT NOT NULL,
-            email TEXT NOT NULL,
-            phoneNumber TEXT NOT NULL,
-            telegramId TEXT NOT NULL,
-            joiningDate TEXT NOT NULL,
-            managerId INTEGER,
-            color TEXT,
-            tabId INTEGER NOT NULL,
-            dynamicFields TEXT,
-            visibleFields TEXT,
-            FOREIGN KEY (managerId) REFERENCES employees (id),
-            FOREIGN KEY (tabId) REFERENCES tabs (id)
-          )
-        ''');
-
-        await txn.execute('''
-          CREATE TABLE dynamic_fields (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            field_name TEXT NOT NULL UNIQUE
-          )
-        ''');
-
-        await txn.execute('''
-          CREATE TABLE static_fields (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            field_name TEXT NOT NULL UNIQUE,
-            is_required INTEGER NOT NULL,
-            display_name TEXT NOT NULL,
-            is_visible INTEGER NOT NULL
-          )
-        ''');
-
-        if (importData['tabs'] != null) {
-          for (var tab in (importData['tabs'] as List)) {
-            await txn.insert('tabs', (tab as Map).cast<String, dynamic>());
-          }
-        }
-
-        if (importData['employees'] != null) {
-          for (var employee in (importData['employees'] as List)) {
-            await txn.insert('employees', (employee as Map).cast<String, dynamic>());
-          }
-        }
-
-        if (importData['dynamic_fields'] != null) {
-          for (var field in (importData['dynamic_fields'] as List)) {
-            await txn.insert('dynamic_fields', (field as Map).cast<String, dynamic>());
-          }
-        }
-
-        if (importData['static_fields'] != null) {
-          for (var field in (importData['static_fields'] as List)) {
-            await txn.insert('static_fields', (field as Map).cast<String, dynamic>());
-          }
-        }
-      });
-    } catch (e) {
-      throw Exception('Failed to import database from JSON: $e');
-    }
+  if (!await importFile.exists()) {
+    throw Exception('File $filePath not found.');
   }
+
+  try {
+    final jsonContent = await importFile.readAsString();
+    final importData = jsonDecode(jsonContent) as Map<String, dynamic>;
+
+    await db.transaction((txn) async {
+      // Drop existing tables
+      await txn.execute('DROP TABLE IF EXISTS employees');
+      await txn.execute('DROP TABLE IF EXISTS tabs');
+      await txn.execute('DROP TABLE IF EXISTS dynamic_fields');
+      await txn.execute('DROP TABLE IF EXISTS static_fields');
+
+      // Recreate tables
+      await txn.execute('''
+        CREATE TABLE tabs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL
+        )
+      ''');
+
+      await txn.execute('''
+        CREATE TABLE employees (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          title TEXT NOT NULL,
+          email TEXT NOT NULL,
+          phoneNumber TEXT NOT NULL,
+          telegramId TEXT NOT NULL,
+          joiningDate TEXT NOT NULL,
+          managerId INTEGER,
+          color TEXT,
+          tabId INTEGER NOT NULL,
+          dynamicFields TEXT,
+          visibleFields TEXT,
+          FOREIGN KEY (managerId) REFERENCES employees (id),
+          FOREIGN KEY (tabId) REFERENCES tabs (id)
+        )
+      ''');
+
+      await txn.execute('''
+        CREATE TABLE dynamic_fields (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          field_name TEXT NOT NULL UNIQUE
+        )
+      ''');
+
+      await txn.execute('''
+        CREATE TABLE static_fields (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          field_name TEXT NOT NULL UNIQUE,
+          is_required INTEGER NOT NULL,
+          display_name TEXT NOT NULL,
+          is_visible INTEGER NOT NULL
+        )
+      ''');
+
+      // Get valid columns for employees table
+      final validColumns = [
+        'id',
+        'name',
+        'title',
+        'email',
+        'phoneNumber',
+        'telegramId',
+        'joiningDate',
+        'managerId',
+        'color',
+        'tabId',
+        'dynamicFields',
+        'visibleFields'
+      ];
+
+      // Insert tabs
+      if (importData['tabs'] != null) {
+        for (var tab in (importData['tabs'] as List)) {
+          await txn.insert('tabs', (tab as Map).cast<String, dynamic>());
+        }
+      }
+
+      // Insert employees with only valid columns
+      if (importData['employees'] != null) {
+        for (var employee in (importData['employees'] as List)) {
+          final employeeMap = (employee as Map).cast<String, dynamic>();
+          // Filter out invalid columns
+          final filteredEmployeeMap = {
+            for (var key in validColumns)
+              if (employeeMap.containsKey(key)) key: employeeMap[key]
+          };
+          await txn.insert('employees', filteredEmployeeMap);
+        }
+      }
+
+      // Insert dynamic fields
+      if (importData['dynamic_fields'] != null) {
+        for (var field in (importData['dynamic_fields'] as List)) {
+          await txn.insert('dynamic_fields', (field as Map).cast<String, dynamic>());
+        }
+      }
+
+      // Insert static fields and add new columns to employees table if needed
+      if (importData['static_fields'] != null) {
+        for (var field in (importData['static_fields'] as List)) {
+          final fieldMap = (field as Map).cast<String, dynamic>();
+          final fieldName = fieldMap['field_name'] as String;
+          if (!validColumns.contains(fieldName)) {
+            // Add new column to employees table
+            await txn.execute('ALTER TABLE employees ADD COLUMN $fieldName TEXT');
+          }
+          await txn.insert('static_fields', fieldMap);
+        }
+      }
+    });
+  } catch (e) {
+    throw Exception('Failed to import database from JSON: $e');
+  }
+}
 }
