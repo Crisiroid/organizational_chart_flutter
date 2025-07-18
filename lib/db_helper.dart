@@ -751,4 +751,14 @@ class DatabaseHelper {
       throw Exception('Failed to import database from JSON: $e');
     }
   }
+
+  Future<void> updateTab(TabModel tab) async {
+    final db = await database;
+    await db.update(
+      'tabs',
+      {'name': tab.name},
+      where: 'id = ?',
+      whereArgs: [tab.id],
+    );
+  }
 }

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:graphview/GraphView.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:orgchart/splash_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
@@ -50,6 +51,7 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
   final Color defaultColor = Colors.blue[100]!;
   TabController? _tabController;
   int? currentTabId;
+  String appBarTitle = 'چارت سازمانی';
 
   @override
   void initState() {
@@ -61,6 +63,22 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
     _loadTabsAndEmployees();
     _loadDynamicFieldNames();
     _loadStaticFields();
+    _loadAppBarTitle(); // Load the title
+  }
+
+  Future<void> _loadAppBarTitle() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      appBarTitle = prefs.getString('appBarTitle') ?? 'چارت سازمانی';
+    });
+  }
+
+  Future<void> _saveAppBarTitle(String title) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('appBarTitle', title);
+    setState(() {
+      appBarTitle = title;
+    });
   }
 
   Future<void> _loadDynamicFieldNames() async {
@@ -75,6 +93,56 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
         SnackBar(content: Text('خطا در بارگذاری نام‌های فیلدهای پویا: $e')),
       );
     }
+  }
+
+  void _renameTab(BuildContext context, TabModel tab) {
+    final _formKey = GlobalKey<FormState>();
+    String tabName = tab.name;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('تغییر نام تب'),
+        content: Form(
+          key: _formKey,
+          child: TextFormField(
+            initialValue: tabName,
+            decoration: InputDecoration(labelText: 'نام تب'),
+            textDirection: TextDirection.rtl,
+            validator: (value) => value!.isEmpty ? 'نام تب را وارد کنید' : null,
+            onSaved: (value) => tabName = value!,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('کنسل'),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (_formKey.currentState!.validate()) {
+                _formKey.currentState!.save();
+                try {
+                  // Update the tab name in the database
+                  final updatedTab = TabModel(id: tab.id, name: tabName);
+                  await DatabaseHelper.instance.updateTab(updatedTab);
+                  await _loadTabsAndEmployees();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('نام تب با موفقیت تغییر کرد')),
+                  );
+                  Navigator.pop(context);
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('خطا در تغییر نام تب: $e')),
+                  );
+                }
+              }
+            },
+            child: Text('ذخیره'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadStaticFields() async {
@@ -190,6 +258,53 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
         SnackBar(content: Text('خطا در بارگذاری اطلاعات: $e')),
       );
     }
+  }
+
+  void _editAppBarTitle(BuildContext context) {
+    final _formKey = GlobalKey<FormState>();
+    String newTitle = appBarTitle;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('تغییر عنوان برنامه'),
+        content: Form(
+          key: _formKey,
+          child: TextFormField(
+            initialValue: appBarTitle,
+            decoration: InputDecoration(labelText: 'عنوان برنامه'),
+            textDirection: TextDirection.rtl,
+            validator: (value) => value!.isEmpty ? 'عنوان را وارد کنید' : null,
+            onSaved: (value) => newTitle = value!,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('کنسل'),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (_formKey.currentState!.validate()) {
+                _formKey.currentState!.save();
+                try {
+                  await _saveAppBarTitle(newTitle);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('عنوان برنامه با موفقیت تغییر کرد')),
+                  );
+                  Navigator.pop(context);
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('خطا در تغییر عنوان برنامه: $e')),
+                  );
+                }
+              }
+            },
+            child: Text('ذخیره'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _buildGraph() {
@@ -515,7 +630,7 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
     }
     return Scaffold(
       appBar: AppBar(
-        title: Text('چارت سازمانی'),
+        title: Text(appBarTitle),
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
@@ -539,6 +654,12 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                 case 'add_tab':
                   _addNewTab();
                   break;
+                case 'rename_tab':
+                  _renameTab(context, tabs[_tabController!.index]);
+                  break;
+                case 'edit_title': // New option
+                  _editAppBarTitle(context); // Call new method
+                  break;
                 case 'manage_fields':
                   _manageStaticFields();
                   break;
@@ -558,6 +679,26 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                     Icon(Icons.add, color: Colors.black),
                     SizedBox(width: 8),
                     Text('افزودن تب جدید'),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'rename_tab',
+                child: Row(
+                  children: [
+                    Icon(Icons.edit, color: Colors.black),
+                    SizedBox(width: 8),
+                    Text('تغییر نام تب'),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'edit_title', // New menu item
+                child: Row(
+                  children: [
+                    Icon(Icons.title, color: Colors.black),
+                    SizedBox(width: 8),
+                    Text('تغییر عنوان برنامه'),
                   ],
                 ),
               ),
