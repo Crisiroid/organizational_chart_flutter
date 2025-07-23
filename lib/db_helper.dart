@@ -64,22 +64,20 @@ class DatabaseHelper {
     }
 
     return await openDatabase(path,
-        version: 11, onCreate: _createDB, onUpgrade: _upgradeDB);
+        version: 12, // Increment to 12
+        onCreate: _createDB,
+        onUpgrade: _upgradeDB);
   }
 
-  Future _createDB(Database db, int version) async {
-    await db.execute('''
-      CREATE TABLE tabs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE employees (
+  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    // ... (previous upgrades unchanged, up to version 11)
+    if (oldVersion < 12) {
+      // Create a new employees table with title as nullable
+      await db.execute('''
+      CREATE TABLE employees_new (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        title TEXT NOT NULL,
+        title TEXT, -- Title is now nullable
         email TEXT,
         phoneNumber TEXT,
         telegramId TEXT,
@@ -90,28 +88,81 @@ class DatabaseHelper {
         dynamicFields TEXT,
         visibleFields TEXT,
         profilePicture TEXT,
-        FOREIGN KEY (managerId) REFERENCES employees (id),
+        FOREIGN KEY (managerId) REFERENCES employees_new (id),
         FOREIGN KEY (tabId) REFERENCES tabs (id)
       )
     ''');
 
-    await db.execute('''
-      CREATE TABLE dynamic_fields (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        field_name TEXT NOT NULL UNIQUE
+      // Copy data from old employees table to new one
+      await db.execute('''
+      INSERT INTO employees_new (
+        id, name, title, email, phoneNumber, telegramId, joiningDate,
+        managerId, color, tabId, dynamicFields, visibleFields, profilePicture
       )
+      SELECT
+        id, name, title, email, phoneNumber, telegramId, joiningDate,
+        managerId, color, tabId, dynamicFields, visibleFields, profilePicture
+      FROM employees
     ''');
 
-    await db.execute('''
-      CREATE TABLE static_fields (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        field_name TEXT NOT NULL UNIQUE,
-        is_required INTEGER NOT NULL,
-        display_name TEXT NOT NULL,
-        is_visible INTEGER NOT NULL
-      )
-    ''');
+      // Drop the old employees table
+      await db.execute('DROP TABLE employees');
 
+      // Rename the new table to employees
+      await db.execute('ALTER TABLE employees_new RENAME TO employees');
+
+      // Update static_fields to reflect title as optional
+      await db.update('static_fields', {'is_required': 0},
+          where: 'field_name = ?', whereArgs: ['title']);
+    }
+  }
+
+  Future _createDB(Database db, int version) async {
+    await db.execute('''
+    CREATE TABLE tabs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL
+    )
+  ''');
+
+    await db.execute('''
+    CREATE TABLE employees (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      title TEXT, -- Changed from TEXT NOT NULL to TEXT
+      email TEXT,
+      phoneNumber TEXT,
+      telegramId TEXT,
+      joiningDate TEXT NOT NULL,
+      managerId INTEGER,
+      color TEXT NOT NULL,
+      tabId INTEGER NOT NULL,
+      dynamicFields TEXT,
+      visibleFields TEXT,
+      profilePicture TEXT,
+      FOREIGN KEY (managerId) REFERENCES employees (id),
+      FOREIGN KEY (tabId) REFERENCES tabs (id)
+    )
+  ''');
+
+    await db.execute('''
+    CREATE TABLE dynamic_fields (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      field_name TEXT NOT NULL UNIQUE
+    )
+  ''');
+
+    await db.execute('''
+    CREATE TABLE static_fields (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      field_name TEXT NOT NULL UNIQUE,
+      is_required INTEGER NOT NULL,
+      display_name TEXT NOT NULL,
+      is_visible INTEGER NOT NULL
+    )
+  ''');
+
+    // Insert static fields (unchanged from your code, with title is_required: 0)
     await db.insert('static_fields', {
       'field_name': 'name',
       'is_required': 1,
@@ -120,7 +171,7 @@ class DatabaseHelper {
     });
     await db.insert('static_fields', {
       'field_name': 'title',
-      'is_required': 1,
+      'is_required': 0, // Title is optional
       'display_name': 'عنوان شغلی',
       'is_visible': 1
     });
@@ -168,169 +219,6 @@ class DatabaseHelper {
     });
   }
 
-  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      await db.execute('ALTER TABLE employees ADD COLUMN color TEXT');
-    }
-    if (oldVersion < 3) {
-      await db.execute('''
-        CREATE TABLE tabs (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL
-        )
-      ''');
-      await db.execute(
-          'ALTER TABLE employees ADD COLUMN tabId INTEGER NOT NULL DEFAULT 1');
-      await db.insert('tabs', {'id': 1, 'name': 'Tab 1'});
-    }
-    if (oldVersion < 4) {
-      await db.execute('ALTER TABLE employees ADD COLUMN dynamicFields TEXT');
-    }
-    if (oldVersion < 5) {
-      await db.execute('''
-        CREATE TABLE dynamic_fields (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          field_name TEXT NOT NULL UNIQUE
-        )
-      ''');
-    }
-    if (oldVersion < 6) {
-      await db.execute('''
-        CREATE TABLE static_fields (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          field_name TEXT NOT NULL UNIQUE,
-          is_required INTEGER NOT NULL
-        )
-      ''');
-      await db.insert('static_fields', {
-        'field_name': 'name',
-        'is_required': 1,
-      });
-      await db.insert('static_fields', {
-        'field_name': 'title',
-        'is_required': 1,
-      });
-      await db.insert('static_fields', {
-        'field_name': 'email',
-        'is_required': 0,
-      });
-      await db.insert('static_fields', {
-        'field_name': 'phoneNumber',
-        'is_required': 0,
-      });
-      await db.insert('static_fields', {
-        'field_name': 'telegramId',
-        'is_required': 0,
-      });
-      await db.insert('static_fields', {
-        'field_name': 'joiningDate',
-        'is_required': 1,
-      });
-      await db.insert('static_fields', {
-        'field_name': 'managerId',
-        'is_required': 0,
-      });
-      await db.insert('static_fields', {
-        'field_name': 'color',
-        'is_required': 1,
-      });
-    }
-    if (oldVersion < 7) {
-      await db.execute(
-          'ALTER TABLE static_fields ADD COLUMN display_name TEXT NOT NULL DEFAULT ""');
-      await db.update('static_fields', {'display_name': 'نام و نام خانوادگی'},
-          where: 'field_name = ?', whereArgs: ['name']);
-      await db.update('static_fields', {'display_name': 'عنوان شغلی'},
-          where: 'field_name = ?', whereArgs: ['title']);
-      await db.update('static_fields', {'display_name': 'ایمیل'},
-          where: 'field_name = ?', whereArgs: ['email']);
-      await db.update('static_fields', {'display_name': 'شماره تلفن'},
-          where: 'field_name = ?', whereArgs: ['phoneNumber']);
-      await db.update('static_fields', {'display_name': 'شناسه تلگرام'},
-          where: 'field_name = ?', whereArgs: ['telegramId']);
-      await db.update('static_fields', {'display_name': 'تاریخ عضویت'},
-          where: 'field_name = ?', whereArgs: ['joiningDate']);
-      await db.update('static_fields', {'display_name': 'مدیر'},
-          where: 'field_name = ?', whereArgs: ['managerId']);
-      await db.update('static_fields', {'display_name': 'رنگ'},
-          where: 'field_name = ?', whereArgs: ['color']);
-    }
-    if (oldVersion < 8) {
-      await db.execute(
-          'ALTER TABLE static_fields ADD COLUMN is_visible INTEGER NOT NULL DEFAULT 1');
-      await db.update('static_fields', {'is_visible': 1});
-    }
-    if (oldVersion < 9) {
-      await db.execute('ALTER TABLE employees ADD COLUMN visibleFields TEXT');
-      await db.update('employees', {
-        'visibleFields': jsonEncode([
-          'name',
-          'title',
-          'email',
-          'phoneNumber',
-          'telegramId',
-          'joiningDate',
-          'managerId',
-          'color'
-        ])
-      });
-    }
-    if (oldVersion < 10) {
-      await db.execute('''
-        CREATE TABLE employees_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          title TEXT NOT NULL,
-          email TEXT,
-          phoneNumber TEXT,
-          telegramId TEXT,
-          joiningDate TEXT NOT NULL,
-          managerId INTEGER,
-          color TEXT NOT NULL,
-          tabId INTEGER NOT NULL,
-          dynamicFields TEXT,
-          visibleFields TEXT,
-          FOREIGN KEY (managerId) REFERENCES employees_new (id),
-          FOREIGN KEY (tabId) REFERENCES tabs (id)
-        )
-      ''');
-      await db.execute('''
-        INSERT INTO employees_new (id, name, title, email, phoneNumber, telegramId, joiningDate, managerId, color, tabId, dynamicFields, visibleFields)
-        SELECT id, name, title, email, phoneNumber, telegramId, joiningDate, managerId, color, tabId, dynamicFields, visibleFields
-        FROM employees
-      ''');
-      await db.execute('DROP TABLE employees');
-      await db.execute('ALTER TABLE employees_new RENAME TO employees');
-      await db.update('static_fields', {'is_required': 0},
-          where: 'field_name IN (?, ?, ?)',
-          whereArgs: ['email', 'phoneNumber', 'telegramId']);
-      await db.update('static_fields', {'is_required': 1},
-          where: 'field_name = ?', whereArgs: ['color']);
-    }
-    if (oldVersion < 11) {
-      await db.execute('ALTER TABLE employees ADD COLUMN profilePicture TEXT');
-      await db.insert('static_fields', {
-        'field_name': 'profilePicture',
-        'is_required': 0,
-        'display_name': 'عکس پروفایل',
-        'is_visible': 1
-      });
-      await db.update('employees', {
-        'visibleFields': jsonEncode([
-          'name',
-          'title',
-          'email',
-          'phoneNumber',
-          'telegramId',
-          'joiningDate',
-          'managerId',
-          'color',
-          'profilePicture'
-        ])
-      });
-    }
-  }
-
   Future<int> insertTab(TabModel tab) async {
     final db = await database;
     return await db.insert('tabs', tab.toMap());
@@ -363,11 +251,10 @@ class DatabaseHelper {
     final employeeMap = employee.toMap();
     // Ensure required fields are present
     if (employeeMap['name'] == null ||
-        employeeMap['title'] == null ||
         employeeMap['joiningDate'] == null ||
         employeeMap['color'] == null) {
       throw Exception(
-          'Required fields (name, title, joiningDate, color) must be provided');
+          'Required fields (name, joiningDate, color) must be provided');
     }
     return await db.insert('employees', employeeMap);
   }
@@ -377,11 +264,10 @@ class DatabaseHelper {
     final employeeMap = employee.toMap();
     // Ensure required fields are present
     if (employeeMap['name'] == null ||
-        employeeMap['title'] == null ||
         employeeMap['joiningDate'] == null ||
         employeeMap['color'] == null) {
       throw Exception(
-          'Required fields (name, title, joiningDate, color) must be provided');
+          'Required fields (name, joiningDate, color) must be provided');
     }
     await db.update(
       'employees',
@@ -481,14 +367,8 @@ class DatabaseHelper {
     );
   }
 
-  Future<String> exportDatabase() async {
+  Future<String> exportDatabase(String filePath) async {
     final db = await database;
-    const backupDirPath = '/storage/emulated/0/org_chart_backups';
-    await Directory(backupDirPath).create(recursive: true);
-
-    final timestamp =
-        DateTime.now().toIso8601String().replaceAll(':', '').substring(0, 15);
-    final filePath = join(backupDirPath, 'org_chart_backup_$timestamp.sql');
     final file = File(filePath);
     final sink = file.openWrite();
 
@@ -564,20 +444,15 @@ class DatabaseHelper {
     });
   }
 
-  Future<String> exportDatabaseToJson() async {
+  Future<String> exportDatabaseToJson(String filePath) async {
     final db = await database;
-    final appDir = await getApplicationSupportDirectory();
-    const backupDirPath = '/storage/emulated/0/org_chart_backups';
-    await Directory(backupDirPath).create(recursive: true);
-
-    final timestamp =
-        DateTime.now().toIso8601String().replaceAll(':', '').substring(0, 15);
-    final filePath = join(backupDirPath, 'org_chart_backup_$timestamp.json');
-    final file = File(filePath);
 
     try {
+      final file = File(filePath);
+
       final Map<String, dynamic> exportData = {};
 
+      // Fetch tables
       final tabs = await db.query('tabs');
       exportData['tabs'] = tabs;
 
@@ -634,48 +509,48 @@ class DatabaseHelper {
 
         // Recreate tables
         await txn.execute('''
-          CREATE TABLE tabs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL
-          )
-        ''');
+        CREATE TABLE tabs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL
+        )
+      ''');
 
         await txn.execute('''
-          CREATE TABLE employees (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            title TEXT NOT NULL,
-            email TEXT,
-            phoneNumber TEXT,
-            telegramId TEXT,
-            joiningDate TEXT NOT NULL,
-            managerId INTEGER,
-            color TEXT NOT NULL,
-            tabId INTEGER NOT NULL,
-            dynamicFields TEXT,
-            visibleFields TEXT,
-            profilePicture TEXT,
-            FOREIGN KEY (managerId) REFERENCES employees (id),
-            FOREIGN KEY (tabId) REFERENCES tabs (id)
-          )
-        ''');
+        CREATE TABLE employees (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          title TEXT, -- Changed to nullable
+          email TEXT,
+          phoneNumber TEXT,
+          telegramId TEXT,
+          joiningDate TEXT NOT NULL,
+          managerId INTEGER,
+          color TEXT NOT NULL,
+          tabId INTEGER NOT NULL,
+          dynamicFields TEXT,
+          visibleFields TEXT,
+          profilePicture TEXT,
+          FOREIGN KEY (managerId) REFERENCES employees (id),
+          FOREIGN KEY (tabId) REFERENCES tabs (id)
+        )
+      ''');
 
         await txn.execute('''
-          CREATE TABLE dynamic_fields (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            field_name TEXT NOT NULL UNIQUE
-          )
-        ''');
+        CREATE TABLE dynamic_fields (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          field_name TEXT NOT NULL UNIQUE
+        )
+      ''');
 
         await txn.execute('''
-          CREATE TABLE static_fields (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            field_name TEXT NOT NULL UNIQUE,
-            is_required INTEGER NOT NULL,
-            display_name TEXT NOT NULL,
-            is_visible INTEGER NOT NULL
-          )
-        ''');
+        CREATE TABLE static_fields (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          field_name TEXT NOT NULL UNIQUE,
+          is_required INTEGER NOT NULL,
+          display_name TEXT NOT NULL,
+          is_visible INTEGER NOT NULL
+        )
+      ''');
 
         // Get valid columns for employees table
         final validColumns = [

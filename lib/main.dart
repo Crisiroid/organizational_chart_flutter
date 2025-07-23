@@ -49,6 +49,28 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
   List<StaticField> staticFields = [];
   Map<int, bool> _expandedNodes = {};
   final Color defaultColor = Colors.blue[100]!;
+  final List<Color> availableColors = [
+    Colors.blue[100]!, // Default color
+    Colors.red,
+    Colors.green,
+    Colors.yellow,
+    Colors.purple,
+    Colors.orange,
+    Colors.teal,
+    Colors.pink,
+    Colors.cyan,
+    Colors.amber,
+    Colors.indigo, // Added
+    Colors.lime, // Added
+    Colors.deepOrange, // Added
+    Colors.blueGrey, // Added
+    Colors.brown, // Added
+    Colors.grey, // Added
+    Colors.lightBlue, // Added
+    Colors.deepPurple, // Added
+    Colors.lightGreen, // Added
+    Colors.redAccent,
+  ];
   TabController? _tabController;
   int? currentTabId;
   String appBarTitle = 'چارت سازمانی';
@@ -537,16 +559,44 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
 
   void _exportDatabase() async {
     try {
-      final filePath = await DatabaseHelper.instance.exportDatabase();
-      final filePathJson = await DatabaseHelper.instance.exportDatabaseToJson();
+      // Generate timestamp for the backup filename
+      final timestamp =
+          DateTime.now().toIso8601String().replaceAll(':', '').substring(0, 15);
+      final backupFileName = 'org_chart_backup_$timestamp.sql';
+
+      // Use folder picker to let user choose where to save the backup
+      String? selectedFolder = await _pickFolder();
+
+      // Fallback for Android or cancel case
+      if (selectedFolder == null) {
+        if (Platform.isAndroid) {
+          selectedFolder = '/storage/emulated/0/org_chart_backups';
+          await Directory(selectedFolder).create(recursive: true);
+        } else {
+          final defaultDir = await getApplicationSupportDirectory();
+          selectedFolder = defaultDir.path;
+        }
+      }
+
+      final filePathSql =
+          path.join(selectedFolder, 'org_chart_backup_$timestamp.sql');
+      final filePathJson =
+          path.join(selectedFolder, 'org_chart_backup_$timestamp.json');
+
+      // Export SQL
+      await DatabaseHelper.instance.exportDatabase(filePathSql);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('دیتابیس با موفقیت به $filePath صادر شد')),
+        SnackBar(content: Text('دیتابیس با موفقیت به $filePathSql صادر شد')),
       );
+
+      // Export JSON (optional)
+      await DatabaseHelper.instance.exportDatabaseToJson(filePathJson);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('دیتابیس با موفقیت به $filePathJson صادر شد')),
+        SnackBar(
+            content: Text('دیتابیس JSON با موفقیت به $filePathJson صادر شد')),
       );
     } catch (e) {
-      print(e);
+      print('Error exporting database: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('خطا در صادر کردن دیتابیس: $e')),
       );
@@ -831,7 +881,10 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
         nodeFields.add(Text(
           emp.staticFields[field.fieldName]!,
           style: TextStyle(fontSize: 12),
-          textDirection: TextDirection.rtl,
+          textDirection: field.fieldName == 'phoneNumber' ||
+                  field.fieldName == 'telegramId'
+              ? TextDirection.ltr
+              : TextDirection.rtl,
         ));
       }
     }
@@ -842,7 +895,7 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
         nodeFields.add(Text(
           emp.dynamicFields[fieldName]!,
           style: TextStyle(fontSize: 12),
-          textDirection: TextDirection.rtl,
+          textDirection: TextDirection.rtl, // Dynamic fields remain RTL
         ));
       }
     }
@@ -886,7 +939,8 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
       context: context,
       builder: (context) => AlertDialog(
         title: Text(emp.staticFields['name'] ?? '',
-            textDirection: TextDirection.rtl),
+            textDirection: TextDirection.rtl,
+            style: TextStyle(fontFamily: 'Vazir')),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -916,33 +970,68 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                       field.fieldName != 'color' &&
                       field.fieldName != 'profilePicture')
                   .map((field) {
-                if (emp.staticFields.containsKey(field.fieldName)) {
-                  if (field.fieldName == 'joiningDate') {
-                    return Text(
-                      '${field.displayName}: ${emp.staticFields[field.fieldName] ?? ''}',
-                      textDirection: TextDirection.rtl,
-                    );
-                  } else if (field.fieldName == 'managerId') {
-                    final manager = employees.firstWhere(
-                      (e) => e.id == emp.managerId,
-                      orElse: () => Employee(
-                        staticFields: {'name': 'مدیری نیست'},
-                        dynamicFields: {},
-                        visibleFields: [],
+                if (emp.staticFields.containsKey(field.fieldName) &&
+                    emp.visibleFields.contains(field.fieldName)) {
+                  final value = field.fieldName == 'managerId'
+                      ? (employees
+                              .firstWhere(
+                                (e) => e.id == emp.managerId,
+                                orElse: () => Employee(
+                                  staticFields: {'name': 'مدیری نیست'},
+                                  dynamicFields: {},
+                                  visibleFields: [],
+                                ),
+                              )
+                              .staticFields['name'] ??
+                          '')
+                      : (emp.staticFields[field.fieldName] ?? '');
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          value,
+                          textDirection: field.fieldName == 'telegramId' ||
+                                  field.fieldName == 'phoneNumber'
+                              ? TextDirection.ltr
+                              : TextDirection.rtl,
+                          style: TextStyle(fontFamily: 'Vazir'),
+                          textAlign: field.fieldName == 'telegramId' ||
+                                  field.fieldName == 'phoneNumber'
+                              ? TextAlign.left
+                              : TextAlign.right,
+                        ),
                       ),
-                    );
-                    return Text(
-                      '${field.displayName}: ${manager.staticFields['name']}',
-                      textDirection: TextDirection.rtl,
-                    );
-                  } else {
-                    return Text(
-                      '${field.displayName}: ${emp.staticFields[field.fieldName] ?? ''}',
-                      textDirection: TextDirection.rtl,
-                    );
-                  }
+                      Text(
+                        '${field.displayName}: ',
+                        textDirection: TextDirection.rtl,
+                        style: TextStyle(fontFamily: 'Vazir'),
+                      ),
+                    ],
+                  );
                 }
                 return SizedBox.shrink();
+              }),
+              ...dynamicFieldNames
+                  .where((fieldName) => emp.visibleFields.contains(fieldName))
+                  .map((fieldName) {
+                final value = emp.dynamicFields[fieldName] ?? '';
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(value,
+                          textDirection: TextDirection.ltr,
+                          style: TextStyle(fontFamily: 'Vazir'),
+                          textAlign: TextAlign.left),
+                    ),
+                    Text(
+                      '$fieldName: ',
+                      textDirection: TextDirection.rtl,
+                      style: TextStyle(fontFamily: 'Vazir'),
+                    ),
+                  ],
+                );
               }),
             ],
           ),
@@ -950,12 +1039,14 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('بستن', textDirection: TextDirection.rtl),
+            child: Text('بستن',
+                textDirection: TextDirection.rtl,
+                style: TextStyle(fontFamily: 'Vazir')),
           ),
           TextButton(
             onPressed: () => _showEditEmployeeDialog(context, emp),
             child: Text('ویرایش',
-                style: TextStyle(color: Colors.blue),
+                style: TextStyle(color: Colors.blue, fontFamily: 'Vazir'),
                 textDirection: TextDirection.rtl),
           ),
           TextButton(
@@ -964,7 +1055,7 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
               Navigator.pop(context);
             },
             child: Text('حذف',
-                style: TextStyle(color: Colors.red),
+                style: TextStyle(color: Colors.red, fontFamily: 'Vazir'),
                 textDirection: TextDirection.rtl),
           ),
         ],
@@ -994,6 +1085,18 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
       await File(file.path).copy(newPath);
       return newPath;
     }
+    return null;
+  }
+
+  Future<String?> _pickFolder() async {
+    final String? folderPath = await getDirectoryPath(
+      confirmButtonText: 'انتخاب پوشه',
+    );
+
+    if (folderPath != null) {
+      return folderPath;
+    }
+
     return null;
   }
 
@@ -1139,7 +1242,8 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                         ],
                         onChanged: (value) => managerId = value,
                       );
-                    } else if (field.fieldName == 'color') {
+                    } // Inside _showEditEmployeeDialog, update the color picker section
+                    else if (field.fieldName == 'color') {
                       return Directionality(
                         textDirection: TextDirection.rtl,
                         child: Padding(
@@ -1164,6 +1268,8 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                                                     .text =
                                                 '0x${color.value.toRadixString(16).padLeft(8, '0')}';
                                           },
+                                          availableColors:
+                                              availableColors, // Add the custom color list
                                         ),
                                       ),
                                       actions: [
@@ -1196,8 +1302,7 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                           controller: staticFieldControllers[field.fieldName],
                           decoration:
                               InputDecoration(labelText: field.displayName),
-                          validator: (field.fieldName == 'name' ||
-                                  field.fieldName == 'title')
+                          validator: (field.fieldName == 'name')
                               ? (value) => value!.isEmpty
                                   ? '${field.displayName} را وارد کنید'
                                   : null
@@ -1383,7 +1488,8 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          title: Text('اضافه کردن کارمند جدید'),
+          title:
+              Text('اضافه کردن کارمند جدید', textDirection: TextDirection.rtl),
           content: Form(
             key: _formKey,
             child: SingleChildScrollView(
@@ -1467,8 +1573,9 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                       );
                     } else if (field.fieldName == 'managerId') {
                       return DropdownButtonFormField<int>(
-                        decoration:
-                            InputDecoration(labelText: field.displayName),
+                        decoration: InputDecoration(
+                            labelText: field.displayName,
+                            labelStyle: TextStyle(fontFamily: 'Vazir')),
                         value: managerId,
                         items: [
                           DropdownMenuItem(
@@ -1477,24 +1584,29 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                               .where((e) => e.tabId == currentTabId)
                               .map((e) => DropdownMenuItem(
                                     value: e.id,
-                                    child: Text(e.staticFields['name'] ?? ''),
+                                    child: Text(e.staticFields['name'] ?? '',
+                                        textDirection: TextDirection.rtl),
                                   )),
                         ],
                         onChanged: (value) => managerId = value,
                       );
-                    } else if (field.fieldName == 'color') {
+                    } // Inside _showAddEmployeeDialog, update the color picker section
+                    else if (field.fieldName == 'color') {
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
                         child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            Text('${field.displayName}: '),
+                            Text('${field.displayName}: ',
+                                textDirection: TextDirection.rtl),
                             SizedBox(width: 10),
                             GestureDetector(
                               onTap: () {
                                 showDialog(
                                   context: context,
                                   builder: (context) => AlertDialog(
-                                    title: Text('انتخاب رنگ'),
+                                    title: Text('انتخاب رنگ',
+                                        textDirection: TextDirection.rtl),
                                     content: SingleChildScrollView(
                                       child: BlockPicker(
                                         pickerColor: selectedColor,
@@ -1504,12 +1616,15 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                                                   .text =
                                               '0x${color.value.toRadixString(16).padLeft(8, '0')}';
                                         },
+                                        availableColors:
+                                            availableColors, // Add the custom color list
                                       ),
                                     ),
                                     actions: [
                                       TextButton(
                                         onPressed: () => Navigator.pop(context),
-                                        child: Text('تأیید'),
+                                        child: Text('تأیید',
+                                            textDirection: TextDirection.rtl),
                                       ),
                                     ],
                                   ),
@@ -1540,7 +1655,7 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                           hintText = 'مثال: ahmad@example.com';
                           break;
                         case 'phoneNumber':
-                          hintText = 'مثال: ۰۹۱۲۳۴۵۶۷۸۹';
+                          hintText = 'مثال: +989123456789';
                           break;
                         case 'telegramId':
                           hintText = 'مثال: @AhmadMohammadi';
@@ -1554,8 +1669,7 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                             labelText: field.displayName,
                             hintText: hintText,
                           ),
-                          validator: (field.fieldName == 'name' ||
-                                  field.fieldName == 'title')
+                          validator: (field.fieldName == 'name')
                               ? (value) => value!.isEmpty
                                   ? '${field.displayName} را وارد کنید'
                                   : null
@@ -1566,10 +1680,14 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                   }),
                   SizedBox(height: 10),
                   Text('فیلدهای اضافی:',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                      textDirection: TextDirection.rtl),
                   ...dynamicFieldNames.map((fieldName) => TextFormField(
                         controller: dynamicFieldControllers[fieldName],
-                        decoration: InputDecoration(labelText: fieldName),
+                        decoration: InputDecoration(
+                            labelText: fieldName,
+                            labelStyle: TextStyle(fontFamily: 'Vazir')),
+                        textDirection: TextDirection.rtl,
                       )),
                   SizedBox(height: 10),
                   Text('فیلدهای قابل نمایش در جزئیات:',
@@ -1610,7 +1728,7 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text('کنسل'),
+              child: Text('کنسل', textDirection: TextDirection.rtl),
             ),
             TextButton(
               onPressed: () async {
@@ -1654,7 +1772,7 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                   Navigator.pop(context);
                 }
               },
-              child: Text('ذخیره'),
+              child: Text('ذخیره', textDirection: TextDirection.rtl),
             ),
           ],
         ),
