@@ -88,6 +88,16 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
     _loadAppBarTitle(); // Load the title
   }
 
+  String formatDateTime(String? isoString) {
+    if (isoString == null || isoString.isEmpty) return '';
+    try {
+      final dateTime = DateTime.parse(isoString);
+      return '${dateTime.year}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+    } catch (e) {
+      return isoString; // Fallback to raw string if parsing fails
+    }
+  }
+
   Future<void> _loadAppBarTitle() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -984,26 +994,24 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                               )
                               .staticFields['name'] ??
                           '')
-                      : (emp.staticFields[field.fieldName] ?? '');
+                      : (field.fieldName == 'joiningDate'
+                          ? formatDateTime(emp.staticFields[field.fieldName])
+                          : emp.staticFields[field.fieldName] ?? '');
                   return Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(
                         child: Text(
                           value,
-                          textDirection: field.fieldName == 'telegramId' ||
-                                  field.fieldName == 'phoneNumber'
-                              ? TextDirection.ltr
-                              : TextDirection.rtl,
+                          textDirection: TextDirection.ltr,
+                          textAlign: TextAlign.left,
                           style: TextStyle(fontFamily: 'Vazir'),
-                          textAlign: field.fieldName == 'telegramId' ||
-                                  field.fieldName == 'phoneNumber'
-                              ? TextAlign.left
-                              : TextAlign.right,
                         ),
                       ),
                       Text(
-                        '${field.displayName}: ',
+                        field.fieldName == 'joiningDate'
+                            ? 'تاریخ ایجاد/عضویت: '
+                            : '${field.displayName}: ',
                         textDirection: TextDirection.rtl,
                         style: TextStyle(fontFamily: 'Vazir'),
                       ),
@@ -1020,10 +1028,12 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Expanded(
-                      child: Text(value,
-                          textDirection: TextDirection.ltr,
-                          style: TextStyle(fontFamily: 'Vazir'),
-                          textAlign: TextAlign.left),
+                      child: Text(
+                        value,
+                        textDirection: TextDirection.ltr,
+                        textAlign: TextAlign.left,
+                        style: TextStyle(fontFamily: 'Vazir'),
+                      ),
                     ),
                     Text(
                       '$fieldName: ',
@@ -1560,11 +1570,23 @@ class _TabbedOrgChartScreenState extends State<TabbedOrgChartScreen>
                             lastDate: DateTime(2100),
                           );
                           if (pickedDate != null) {
-                            setState(() {
-                              joiningDate = pickedDate;
-                              staticFieldControllers['joiningDate']!.text =
-                                  joiningDate.toIso8601String();
-                            });
+                            final pickedTime = await showTimePicker(
+                              context: context,
+                              initialTime: TimeOfDay.fromDateTime(joiningDate),
+                            );
+                            if (pickedTime != null) {
+                              setState(() {
+                                joiningDate = DateTime(
+                                  pickedDate.year,
+                                  pickedDate.month,
+                                  pickedDate.day,
+                                  pickedTime.hour,
+                                  pickedTime.minute,
+                                );
+                                staticFieldControllers['joiningDate']!.text =
+                                    joiningDate.toIso8601String();
+                              });
+                            }
                           }
                         },
                         child: Text(
